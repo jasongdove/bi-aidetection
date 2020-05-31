@@ -1,9 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.28307.489
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30114.105
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UI", "UI\UI.csproj", "{B8ACBD49-0830-4E34-B5B6-C876BEAE6F65}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIDetection.Common", "AIDetection.Common\AIDetection.Common.csproj", "{42AB545E-B9C6-47CC-8B8C-6F56B73390EF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{B8ACBD49-0830-4E34-B5B6-C876BEAE6F65}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B8ACBD49-0830-4E34-B5B6-C876BEAE6F65}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B8ACBD49-0830-4E34-B5B6-C876BEAE6F65}.Release|Any CPU.Build.0 = Release|Any CPU
+		{42AB545E-B9C6-47CC-8B8C-6F56B73390EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{42AB545E-B9C6-47CC-8B8C-6F56B73390EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{42AB545E-B9C6-47CC-8B8C-6F56B73390EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{42AB545E-B9C6-47CC-8B8C-6F56B73390EF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

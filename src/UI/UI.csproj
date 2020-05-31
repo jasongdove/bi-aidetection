@@ -110,7 +110,6 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Camera.cs" />
     <Compile Include="Shell.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -188,6 +187,12 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>false</Install>
     </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AIDetection.Common\AIDetection.Common.csproj">
+      <Project>{42ab545e-b9c6-47cc-8b8c-6f56b73390ef}</Project>
+      <Name>AIDetection.Common</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

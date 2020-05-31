@@ -28,6 +28,7 @@ using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
 
 using Microsoft.WindowsAPICodePack.Dialogs; //for file dialog
+using AIDetection.Common;
 
 namespace WindowsFormsApp2
 {
@@ -240,16 +241,16 @@ namespace WindowsFormsApp2
 
                             string fileprefix = Path.GetFileNameWithoutExtension(image_path).Split('.')[0]; //get prefix of inputted file
 
-                            int index = CameraList.FindIndex(x => x.prefix == fileprefix); //get index of camera with same prefix, is =-1 if no camera has the same prefix 
+                            int index = CameraList.FindIndex(x => x.Prefix == fileprefix); //get index of camera with same prefix, is =-1 if no camera has the same prefix 
 
                             //if there is no camera with the same prefix
                             if (index == -1)
                             {
                                 Log("   No camera with the same prefix found...");
                                 //check if there is a default camera which accepts any prefix, select it
-                                if (CameraList.Exists(x => x.prefix == ""))
+                                if (CameraList.Exists(x => x.Prefix == ""))
                                 {
-                                    index = CameraList.FindIndex(x => x.prefix == "");
+                                    index = CameraList.FindIndex(x => x.Prefix == "");
                                     Log("(   Found a default camera.");
                                 }
                                 else
@@ -266,7 +267,7 @@ namespace WindowsFormsApp2
                             {
 
                                 //if camera is enabled
-                                if (CameraList[index].enabled == true)
+                                if (CameraList[index].IsEnabled)
                                 {
 
                                     //if something was detected
@@ -296,17 +297,17 @@ namespace WindowsFormsApp2
                                                 bool irrelevant_object = false;
 
                                                 //if object detected is one of the objects that is relevant
-                                                if (CameraList[index].triggering_objects_as_string.Contains(user.label))
+                                                if (CameraList[index].TriggeringObjects.Contains(user.label, StringComparer.OrdinalIgnoreCase))
                                                 {
                                                     // -> OBJECT IS RELEVANT
 
                                                     //if confidence limits are satisfied
-                                                    if (user.confidence * 100 >= CameraList[index].threshold_lower && user.confidence * 100 <= CameraList[index].threshold_upper)
+                                                    if (user.confidence * 100 >= CameraList[index].ThresholdLower && user.confidence * 100 <= CameraList[index].ThresholdUpper)
                                                     {
                                                         // -> OBJECT IS WITHIN CONFIDENCE LIMITS
 
                                                         //only if the object is outside of the masked area
-                                                        if (Outsidemask(CameraList[index].name, user.x_min, user.x_max, user.y_min, user.y_max, img.Width, img.Height))
+                                                        if (Outsidemask(CameraList[index].Name, user.x_min, user.x_max, user.y_min, user.y_max, img.Width, img.Height))
                                                         {
                                                             // -> OBJECT IS OUTSIDE OF MASKED AREAS
 
@@ -350,14 +351,16 @@ namespace WindowsFormsApp2
                                         if (objects.Count() > 0)
                                         {
                                             //store these last detections for the specific camera
-                                            CameraList[index].last_detections = objects;
-                                            CameraList[index].last_confidences = objects_confidence;
-                                            CameraList[index].last_positions = objects_position;
+                                            CameraList[index].LastDetections = objects;
+                                            CameraList[index].LastConfidences = objects_confidence;
+                                            CameraList[index].LastPositions = objects_position;
 
                                             //RELEVANT ALERT
                                             Log("(5/6) Performing alert actions:");
                                             await Trigger(index, image_path); //make TRIGGER
-                                            CameraList[index].IncrementAlerts(); //stats update
+                                            //stats update
+                                            CameraList[index].AlertCount++;
+                                            CameraLoader.WriteLegacyFile(CameraList[index]);
                                             Log($"(6/6) SUCCESS.");
 
 
@@ -375,7 +378,7 @@ namespace WindowsFormsApp2
 
                                             //add to history list
                                             Log("Adding detection to history list.");
-                                            CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].name, objects_and_confidences, object_positions_as_string);
+                                            CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].Name, objects_and_confidences, object_positions_as_string);
 
                                         }
                                         //if no object fulfills all 3 requirements but there are other objects: 
@@ -384,8 +387,11 @@ namespace WindowsFormsApp2
                                             //IRRELEVANT ALERT
 
 
-                                            CameraList[index].IncrementIrrelevantAlerts(); //stats update
-                                            Log($"(6/6) Camera {CameraList[index].name} caused an irrelevant alert.");
+                                            //stats update
+                                            CameraList[index].IrrelevantAlertCount++;
+                                            CameraLoader.WriteLegacyFile(CameraList[index]);
+
+                                            Log($"(6/6) Camera {CameraList[index].Name} caused an irrelevant alert.");
                                             Log("Adding irrelevant detection to history list.");
 
                                             //retrieve confidences and positions
@@ -419,7 +425,7 @@ namespace WindowsFormsApp2
 
                                             Log($"{text}, so it's an irrelevant alert.");
                                             //add to history list
-                                            CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].name, $"{text} : {objects_and_confidences}", object_positions_as_string);
+                                            CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].Name, $"{text} : {objects_and_confidences}", object_positions_as_string);
                                         }
                                     }
                                     //if no object was detected
@@ -427,17 +433,20 @@ namespace WindowsFormsApp2
                                     {
                                         // FALSE ALERT
 
-                                        CameraList[index].IncrementFalseAlerts(); //stats update
-                                        Log($"(6/6) Camera {CameraList[index].name} caused a false alert, nothing detected.");
+                                        //stats update
+                                        CameraList[index].FalseAlertCount++;
+                                        CameraLoader.WriteLegacyFile(CameraList[index]);
+                                        
+                                        Log($"(6/6) Camera {CameraList[index].Name} caused a false alert, nothing detected.");
 
                                         //add to history list
                                         Log("Adding false to history list.");
-                                        CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].name, "false alert", "");
+                                        CreateListItem(Path.GetFileName(image_path), DateTime.Now.ToString("dd.MM.yy, HH:mm:ss"), CameraList[index].Name, "false alert", "");
                                     }
                                 }
 
                                 //if camera is disabled.
-                                else if (CameraList[index].enabled == false)
+                                else if (CameraList[index].IsEnabled == false)
                                 {
                                     Log("(6/6) Selected camera is disabled.");
                                 }
@@ -459,10 +468,10 @@ namespace WindowsFormsApp2
                             //load only stats from Camera.cs object
 
                             //all camera objects are stored in the list CameraList, so firstly the position (stored in the second column for each entry) is gathered
-                            int i = CameraList.FindIndex(x => x.name == list2.SelectedItems[0].Text);
+                            int i = CameraList.FindIndex(x => x.Name == list2.SelectedItems[0].Text);
 
                             //load cameras stats
-                            string stats = $"Alerts: {CameraList[i].stats_alerts.ToString()} | Irrelevant Alerts: {CameraList[i].stats_irrelevant_alerts.ToString()} | False Alerts: {CameraList[i].stats_false_alerts.ToString()}";
+                            string stats = $"Alerts: {CameraList[i].AlertCount} | Irrelevant Alerts: {CameraList[i].IrrelevantAlertCount} | False Alerts: {CameraList[i].FalseAlertCount}";
                             lbl_camstats.Text = stats;
                         }
 
@@ -629,23 +638,23 @@ namespace WindowsFormsApp2
         public async Task Trigger(int index, string image_path)
         {
             //only trigger if cameras cooldown time since last detection has passed
-            if ((DateTime.Now - CameraList[index].last_trigger_time).TotalMinutes >= CameraList[index].cooldown_time)
+            if ((DateTime.Now - CameraList[index].LastTriggerTime) >= CameraList[index].Cooldown)
             {
                 //call trigger urls
-                if (CameraList[index].trigger_urls.Length > 0)
+                if (CameraList[index].TriggerUrls.Any())
                 {
                     //replace url paramters with according values
-                    string[] urls = new string[CameraList[index].trigger_urls.Count()];
+                    string[] urls = new string[CameraList[index].TriggerUrls.Count];
                     int c = 0;
                     //call urls
-                    foreach (string url in CameraList[index].trigger_urls)
+                    foreach (string url in CameraList[index].TriggerUrls)
                     {
-                        urls[c] = url.Replace("[camera]", CameraList[index].name)
-                                     .Replace("[detection]", CameraList[index].last_detections.ElementAt(1))
-                                     .Replace("[position]", CameraList[index].last_positions.ElementAt(1))
-                                     .Replace("[confidence]", CameraList[index].last_confidences.ElementAt(1).ToString())
-                                     .Replace("[detections]", string.Join(",", CameraList[index].last_detections))
-                                     .Replace("[confidences]", string.Join(",", CameraList[index].last_confidences.ToString()));
+                        urls[c] = url.Replace("[camera]", CameraList[index].Name)
+                                     .Replace("[detection]", CameraList[index].LastDetections.ElementAt(1))
+                                     .Replace("[position]", CameraList[index].LastPositions.ElementAt(1))
+                                     .Replace("[confidence]", CameraList[index].LastConfidences.ElementAt(1).ToString())
+                                     .Replace("[detections]", string.Join(",", CameraList[index].LastDetections))
+                                     .Replace("[confidences]", string.Join(",", CameraList[index].LastConfidences.ToString()));
                         c++;
                     }
 
@@ -655,14 +664,14 @@ namespace WindowsFormsApp2
             else
             {
                 //log that nothing was done
-                Log($"   Camera {CameraList[index].name} is still in trigger cooldown. Trigger URL wasn't called. and no image will be uploaded to Telegram.");
+                Log($"   Camera {CameraList[index].Name} is still in trigger cooldown. Trigger URL wasn't called.");
             }
             
             //only telegram if cameras cooldown time since last detection has passed
-            if ((DateTime.Now - CameraList[index].last_telegram_time).TotalMinutes >= CameraList[index].telegram_cooldown_time)
+            if ((DateTime.Now - CameraList[index].LastTelegramTime) >= CameraList[index].TelegramCooldown)
             {
                 //upload to telegram
-                if (CameraList[index].telegram_enabled)
+                if (CameraList[index].IsTelegramEnabled)
                 {
                     Log("   Uploading image to Telegram...");
                     await TelegramUpload(image_path);
@@ -672,12 +681,12 @@ namespace WindowsFormsApp2
             else
             {
                 //log that nothing was done
-                Log($"   Camera {CameraList[index].name} is still in telegram cooldown. No image will be uploaded to Telegram.");
+                Log($"   Camera {CameraList[index].Name} is still in telegram cooldown. No image will be uploaded to Telegram.");
             }
 
             //reset cooldown time every time an image contains something, even if no trigger was called (still in cooldown time)
-            CameraList[index].last_trigger_time = DateTime.Now;
-            CameraList[index].last_telegram_time = DateTime.Now;
+            CameraList[index].LastTriggerTime = DateTime.Now;
+            CameraList[index].LastTelegramTime = DateTime.Now;
         }
 
 
@@ -998,17 +1007,17 @@ namespace WindowsFormsApp2
             {
                 foreach (Camera cam in CameraList)
                 {
-                    alerts += cam.stats_alerts;
-                    irrelevantalerts += cam.stats_irrelevant_alerts;
-                    falsealerts += cam.stats_false_alerts;
+                    alerts += cam.AlertCount;
+                    irrelevantalerts += cam.IrrelevantAlertCount;
+                    falsealerts += cam.FalseAlertCount;
                 }
             }
             else
             {
-                int i = CameraList.FindIndex(x => x.name == comboBox1.Text.Substring(3));
-                alerts = CameraList[i].stats_alerts;
-                irrelevantalerts = CameraList[i].stats_irrelevant_alerts;
-                falsealerts = CameraList[i].stats_false_alerts;
+                int i = CameraList.FindIndex(x => x.Name == comboBox1.Text.Substring(3));
+                alerts = CameraList[i].AlertCount;
+                irrelevantalerts = CameraList[i].IrrelevantAlertCount;
+                falsealerts = CameraList[i].FalseAlertCount;
             }
 
             chart1.Series[0].Points.Clear();
@@ -1794,7 +1803,7 @@ namespace WindowsFormsApp2
                     }
 
                     //Add loaded camera to list2
-                    ListViewItem item = new ListViewItem(new string[] { CameraList[i].name });
+                    ListViewItem item = new ListViewItem(new string[] { CameraList[i].Name });
                     item.Tag = file;
                     list2.Items.Add(item);
                     i++;
@@ -1820,24 +1829,23 @@ namespace WindowsFormsApp2
             //check if camera with specified name or its prefix already exists. If yes, then abort.
             foreach (Camera c in CameraList)
             {
-                if (c.name == Path.GetFileNameWithoutExtension(config_path))
+                if (c.Name == Path.GetFileNameWithoutExtension(config_path))
                 {
                     return ($"ERROR: Camera name must be unique,{Path.GetFileNameWithoutExtension(config_path)} already exists.");
                 }
-                if (c.prefix == System.IO.File.ReadAllLines(config_path)[2].Split('"')[1])
+                if (c.Prefix == System.IO.File.ReadAllLines(config_path)[2].Split('"')[1])
                 {
-                    return ($"ERROR: Every camera must have a unique prefix ('Input file begins with'), but the prefix of {Path.GetFileNameWithoutExtension(config_path)} equals the prefix of the existing camera {c.name} .");
+                    return ($"ERROR: Every camera must have a unique prefix ('Input file begins with'), but the prefix of {Path.GetFileNameWithoutExtension(config_path)} equals the prefix of the existing camera {c.Name} .");
                 }
             }
-            Camera cam = new Camera(); //create new camera object
             Log("read config");
-            cam.ReadConfig(config_path); //read camera's config from file
+            Camera cam = CameraLoader.FromLegacyFile(config_path);
             Log("add");
             CameraList.Add(cam); //add created camera object to CameraList
 
             //add camera to combobox on overview tab and to camera filter combobox in the History tab 
-            comboBox1.Items.Add($"   {cam.name}"); 
-            comboBox_filter_camera.Items.Add($"   {cam.name}"); 
+            comboBox1.Items.Add($"   {cam.Name}"); 
+            comboBox_filter_camera.Items.Add($"   {cam.Name}"); 
 
             return ($"SUCCESS: {Path.GetFileNameWithoutExtension(config_path)} loaded.");
         }
@@ -1848,7 +1856,7 @@ namespace WindowsFormsApp2
             //check if camera with specified name already exists. If yes, then abort.
             foreach (Camera c in CameraList)
             {
-                if (c.name == name)
+                if (c.Name == name)
                 {
                     MessageBox.Show($"ERROR: Camera name must be unique,{name} already exists.");
                     return ($"ERROR: Camera name must be unique,{name} already exists.");
@@ -1862,8 +1870,21 @@ namespace WindowsFormsApp2
                 return ($"ERROR: Camera name may not be empty.");
             }
 
-            Camera cam = new Camera(); //create new camera object
-            cam.WriteConfig(name, prefix, triggering_objects_as_string, trigger_urls_as_string, telegram_enabled, enabled, cooldown_time, telegram_cooldown_time, threshold_lower, threshold_upper); //set parameters
+            Camera cam = new Camera
+            {
+                Name = name,
+                Prefix = prefix,
+                TriggeringObjects = triggering_objects_as_string.Split(',').ToList(),
+                TriggerUrls = trigger_urls_as_string.Replace(" ", "").Split(',').Where(x => string.IsNullOrWhiteSpace(x) == false).ToList(),
+                IsTelegramEnabled = telegram_enabled,
+                IsEnabled = enabled,
+                Cooldown = TimeSpan.FromMinutes(cooldown_time),
+                TelegramCooldown = TimeSpan.FromMinutes(telegram_cooldown_time),
+                ThresholdLower = threshold_lower,
+                ThresholdUpper = threshold_upper
+            };
+
+            CameraLoader.WriteLegacyFile(cam);
             CameraList.Add(cam); //add created camera object to CameraList
 
             //add camera to list2
@@ -1872,8 +1893,8 @@ namespace WindowsFormsApp2
             list2.Items.Add(item);
 
             //add camera to combobox on overview tab and to camera filter combobox in the History tab 
-            comboBox1.Items.Add($"   {cam.name}");
-            comboBox_filter_camera.Items.Add($"   {cam.name}");
+            comboBox1.Items.Add($"   {cam.Name}");
+            comboBox_filter_camera.Items.Add($"   {cam.Name}");
 
             //select first camera
             if (list2.Items.Count == 1)
@@ -1896,32 +1917,51 @@ namespace WindowsFormsApp2
             }
 
             //check if camera with specified name exists. If no, then abort.
-            if (!CameraList.Exists(x => x.name == oldname))
+            if (!CameraList.Exists(x => x.Name == oldname))
             {
                 return ($"WARNING: Camera can't be modified because old name {oldname} wasn't found.");
             }
 
             // check if the new name isn't taken by another camera already (in case the name was changed)
-            if (name != oldname && CameraList.Exists(x => String.Equals(name, x.name, StringComparison.OrdinalIgnoreCase)))
+            if (name != oldname && CameraList.Exists(x => String.Equals(name, x.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 DisplayCameraSettings(); //reset displayed settings
                 return ($"WARNING: Camera name must be unique, but new camera name {name} already exists.");
             }
 
             int index = -1; 
-            index = CameraList.FindIndex(x => x.name == oldname); //index of specified camera in list
+            index = CameraList.FindIndex(x => x.Name == oldname); //index of specified camera in list
 
             if(index == -1) { Log("ERROR updating camera, could not find original camera profile."); }
 
             //check if new prefix isn't already taken by another camera
-            if (prefix != CameraList[index].prefix  &&  CameraList.Exists(x => x.prefix == prefix ))
+            if (prefix != CameraList[index].Prefix  &&  CameraList.Exists(x => x.Prefix == prefix ))
             {
                 DisplayCameraSettings(); //reset displayed settings
                 return ($"WARNING: Every camera must have a unique prefix ('Input file begins with'), but the prefix of {name} already exists.");
             }
 
-        //2. WRITE CONFIG
-            CameraList[index].WriteConfig(name, prefix, triggering_objects_as_string, trigger_urls_as_string, telegram_enabled, enabled, cooldown_time, telegram_cooldown_time, threshold_lower, threshold_upper); //set parameters
+            //2. WRITE CONFIG
+            Camera cam = CameraList[index];
+            
+            // handle name change
+            if (cam.Name != name)
+            {
+                CameraLoader.DeleteLegacyFile(cam);
+                cam.Name = name;
+            }
+
+            cam.Prefix = prefix;
+            cam.TriggeringObjects = triggering_objects_as_string.Split(',').ToList();
+            cam.TriggerUrls = trigger_urls_as_string.Replace(" ", "").Split(',').ToList();
+            cam.IsTelegramEnabled = telegram_enabled;
+            cam.IsEnabled = enabled;
+            cam.Cooldown = TimeSpan.FromMinutes(cooldown_time);
+            cam.TelegramCooldown = TimeSpan.FromMinutes(telegram_cooldown_time);
+            cam.ThresholdLower = threshold_lower;
+            cam.ThresholdUpper = threshold_upper;
+
+            CameraLoader.WriteLegacyFile(cam);
         
         //3. UPDATE LIST2
             //update list2 entry
@@ -1943,7 +1983,7 @@ namespace WindowsFormsApp2
             Log($"Removing camera {name}...");
             if (list2.Items.Count > 0) //if list is empty, nothing can be deleted
             {
-                if (CameraList.Exists(x => x.name == name)) //check if camera with specified name exists in list
+                if (CameraList.Exists(x => x.Name == name)) //check if camera with specified name exists in list
                 {
 
                     //find index of specified camera in list
@@ -1952,7 +1992,7 @@ namespace WindowsFormsApp2
                     //check for each camera in the cameralist if its name equals the name of the camera that is selected to be deleted
                     for(int i = 0; i < CameraList.Count; i++)
                     {
-                        if (CameraList[i].name.Equals(name))
+                        if (CameraList[i].Name.Equals(name))
                         {
                             index = i;
 
@@ -1961,7 +2001,8 @@ namespace WindowsFormsApp2
 
                     if(index != -1) //only delete camera if index is known (!= its default value -1)
                     {
-                        CameraList[index].Delete(); //delete settings file of specified camera
+                        //delete settings file of specified camera
+                        CameraLoader.DeleteLegacyFile(CameraList[index]);
 
                         //move all cameras following the specified camera one position forward in the list
                         //the position of the specified camera is overridden with the following camera, the position of the following camera is overridden with its follower, and so on
@@ -2022,39 +2063,25 @@ namespace WindowsFormsApp2
                 //load remaining settings from Camera.cs object
 
                 //all camera objects are stored in the list CameraList, so firstly the position (stored in the second column for each entry) is gathered
-                int i = CameraList.FindIndex(x => x.name == list2.SelectedItems[0].Text);
+                int i = CameraList.FindIndex(x => x.Name == list2.SelectedItems[0].Text);
 
                 //load cameras stats
 
-                string stats = $"Alerts: {CameraList[i].stats_alerts.ToString()} | Irrelevant Alerts: {CameraList[i].stats_irrelevant_alerts.ToString()} | False Alerts: {CameraList[i].stats_false_alerts.ToString()}";
+                string stats = $"Alerts: {CameraList[i].AlertCount} | Irrelevant Alerts: {CameraList[i].IrrelevantAlertCount} | False Alerts: {CameraList[i].FalseAlertCount}";
                 lbl_camstats.Text = stats;
 
                 //load if ai detection is active for the camera
-                if (CameraList[i].enabled == true)
-                {
-                    cb_enabled.Checked = true;
-                }
-                else
-                {
-                    cb_enabled.Checked = false;
-                }
-                tbPrefix.Text = CameraList[i].prefix; //load 'input file begins with'
+                cb_enabled.Checked = CameraList[i].IsEnabled;
+                tbPrefix.Text = CameraList[i].Prefix; //load 'input file begins with'
                 lbl_prefix.Text = tbPrefix.Text + ".××××××.jpg"; //prefix live preview
-                tbTriggerUrl.Text = CameraList[i].trigger_urls_as_string; //load trigger url
-                tb_cooldown.Text = CameraList[i].cooldown_time.ToString(); //load cooldown time
-                tb_telegram_cooldown.Text = CameraList[i].telegram_cooldown_time.ToString(); //load telegram cooldown time
-                tb_threshold_lower.Text = CameraList[i].threshold_lower.ToString(); //load lower threshold value
-                tb_threshold_upper.Text = CameraList[i].threshold_upper.ToString(); // load upper threshold value
+                tbTriggerUrl.Text = string.Join(", ", CameraList[i].TriggerUrls); //load trigger url
+                tb_cooldown.Text = CameraList[i].Cooldown.TotalMinutes.ToString(); //load cooldown time
+                tb_telegram_cooldown.Text = CameraList[i].TelegramCooldown.TotalMinutes.ToString(); //load telegram cooldown time
+                tb_threshold_lower.Text = CameraList[i].ThresholdLower.ToString(); //load lower threshold value
+                tb_threshold_upper.Text = CameraList[i].ThresholdUpper.ToString(); // load upper threshold value
 
                 //load telegram image sending on/off option
-                if (CameraList[i].telegram_enabled)
-                {
-                    cb_telegram.Checked = true;
-                }
-                else
-                {
-                    cb_telegram.Checked = false;
-                }
+                cb_telegram.Checked = CameraList[i].IsTelegramEnabled;
 
 
                 //load triggering objects
@@ -2072,7 +2099,7 @@ namespace WindowsFormsApp2
                 //check for every triggering_object string if it is active in the settings file. If yes, check according checkbox
                 for (int j = 0; j < cbarray.Length; j++)
                 {
-                    if (CameraList[i].triggering_objects_as_string.Contains(cbstringarray[j]))
+                    if (CameraList[i].TriggeringObjects.Contains(cbstringarray[j], StringComparer.OrdinalIgnoreCase))
                     {
                         cbarray[j].Checked = true;
                     }
