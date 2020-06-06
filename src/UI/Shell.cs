@@ -15,8 +15,8 @@ using Newtonsoft.Json; //deserialize DeepquestAI response
 using SixLabors.ImageSharp;
 
 //for telegram
-using Telegram.Bot;
-using Telegram.Bot.Types.InputFiles;
+//using Telegram.Bot;
+//using Telegram.Bot.Types.InputFiles;
 
 using Microsoft.WindowsAPICodePack.Dialogs; //for file dialog
 using AIDetection.Common;
@@ -35,8 +35,9 @@ namespace WindowsFormsApp2
 
         static HttpClient client = new HttpClient();
 
-        private LegacySettings _settings;
-        private ImageWatcher _imageWatcher;
+        private readonly LegacySettings _settings;
+        private readonly ImageWatcher _imageWatcher;
+        private readonly TelegramHelper _telegramHelper;
 
         public Shell()
         {
@@ -48,6 +49,8 @@ namespace WindowsFormsApp2
             _imageWatcher.OnImageCreatedAsync += OnCreatedAsync;
             _imageWatcher.OnImageRenamed += OnRenamed;
             _imageWatcher.OnImageDeleted += OnDeleted;
+
+            _telegramHelper = new TelegramHelper(_settings.TelegramToken, _settings.TelegramChatIds);
 
             this.Resize += new System.EventHandler(this.Form1_Resize); //resize event to enable 'minimize to tray'
 
@@ -466,7 +469,7 @@ namespace WindowsFormsApp2
                         //upload the alert image which could not be analyzed to Telegram
                         if (_settings.SendErrors == true)
                         {
-                            await TelegramUpload(image_path);
+                            await _telegramHelper.Upload(image_path);
                         }
                         break; //end retries - this was not a file access error
                     }
@@ -518,87 +521,6 @@ namespace WindowsFormsApp2
             }
         }
 
-        //send image to Telegram
-        public async Task TelegramUpload(string image_path)
-        {
-            if (_settings.TelegramChatId != "" && _settings.TelegramToken != "")
-            {
-                //telegram upload sometimes fails
-                try
-                {
-                    using (var image_telegram = System.IO.File.OpenRead(image_path))
-                    {
-                        var bot = new TelegramBotClient(_settings.TelegramToken);
-
-                        //upload image to Telegram servers and send to first chat
-                        Log($"      uploading image to chat \"{_settings.TelegramChatIds[0]}\"");
-                        var message = await bot.SendPhotoAsync(_settings.TelegramChatIds[0], new InputOnlineFile(image_telegram, "image.jpg"));
-                        string file_id = message.Photo[0].FileId; //get file_id of uploaded image
-
-                        //share uploaded image with all remaining telegram chats (if multiple chat_ids given) using file_id 
-                        foreach (string chatid in _settings.TelegramChatIds.Skip(1))
-                        {
-                            Log($"      uploading image to chat \"{chatid}\"");
-                            await bot.SendPhotoAsync(chatid, file_id);
-                        }     
-                    }
-                }
-                catch
-                {
-                    Log($"ERROR: Could not upload image {image_path} to Telegram.");
-                    //store image that caused an error in ./errors/
-                    if (!Directory.Exists("./errors/")) //if folder does not exist, create the folder
-                    {
-                        //create folder
-                        DirectoryInfo di = Directory.CreateDirectory("./errors");
-                        Log("./errors/" + " dir created.");
-                    }
-                    //save error image
-                    using (var image = SixLabors.ImageSharp.Image.Load(image_path))
-                    {
-                        image.Save("./errors/" + "TELEGRAM-ERROR-" + Path.GetFileName(image_path) + ".jpg");
-                    }
-                }
-
-            }
-        }
-
-        //send text to Telegram
-        public async Task TelegramText(string text)
-        {
-            if (_settings.TelegramChatId != "" && _settings.TelegramToken != "")
-            {
-                //telegram upload sometimes fails
-                try
-                {
-                    var bot = new Telegram.Bot.TelegramBotClient(_settings.TelegramToken);
-                    foreach (string chatid in _settings.TelegramChatIds)
-                    {
-                        await bot.SendTextMessageAsync(chatid, text);
-                    }
-
-                }
-                catch
-                {
-                    if(_settings.SendErrors == true && text.Contains("ERROR") || text.Contains("WARNING")) //if Error message originating from Log() methods can't be uploaded
-                    {
-                        _settings.SendErrors = false; //shortly disable send_errors to ensure that the Log() does not try to send the 'Telegram upload failed' message via Telegram again (causing a loop)
-                        Log($"ERROR: Could not send text \"{text}\" to Telegram.");
-                        _settings.SendErrors = true;
-
-                        //inform on main tab that Telegram upload failed
-                        MethodInvoker LabelUpdate = delegate { lbl_errors.Text = "Can't upload error message to Telegram!"; };
-                        Invoke(LabelUpdate);
-                    }
-                    else
-                    {
-                        Log($"ERROR: Could not send text \"{text}\" to Telegram.");
-                    }
-                }
-
-            }
-        }
-
         //trigger actions
         public async Task Trigger(int index, string image_path)
         {
@@ -639,7 +561,7 @@ namespace WindowsFormsApp2
                 if (CameraList[index].IsTelegramEnabled)
                 {
                     Log("   Uploading image to Telegram...");
-                    await TelegramUpload(image_path);
+                    await _telegramHelper.Upload(image_path);
                     Log("   -> Sent image to Telegram.");
                 }
             }
@@ -800,10 +722,9 @@ namespace WindowsFormsApp2
 
             if(_settings.SendErrors == true && text.Contains("ERROR") || text.Contains("WARNING"))
             {
-                await TelegramText($"[{time}]: {text}"); //upload text to Telegram
+                await _telegramHelper.Text($"[{time}]: {text}"); //upload text to Telegram
             }
             
-          
 
             //add log text to console
             Console.WriteLine($"[{time}]: {text}");
@@ -2216,6 +2137,7 @@ namespace WindowsFormsApp2
 
             //update fswatcher to watch new input folder
             _imageWatcher.UpdateInputPath(_settings.InputPath);
+            _telegramHelper.Configure(_settings.TelegramToken, _settings.TelegramChatIds);
 
             //clean history.csv database
             CleanCSVList();
