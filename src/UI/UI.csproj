@@ -110,6 +110,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Legacy\LegacyCameraLoader.cs" />
+    <Compile Include="Legacy\LegacySettings.cs" />
     <Compile Include="Shell.cs">
       <SubType>Form</SubType>
     </Compile>

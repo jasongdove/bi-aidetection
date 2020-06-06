@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using System.Configuration;
-
 using System.IO;
 using System.Net.Http;
 using System.Net;
@@ -17,31 +13,20 @@ using Newtonsoft.Json; //deserialize DeepquestAI response
 
 //for image cutting
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.Primitives;
 
 //for telegram
 using Telegram.Bot;
-using Telegram.Bot.Args;
-using Telegram.Bot.Types;
-using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
 
 using Microsoft.WindowsAPICodePack.Dialogs; //for file dialog
 using AIDetection.Common;
+using WindowsFormsApp2.Legacy;
 
 namespace WindowsFormsApp2
 {
 
     public partial class Shell : Form
     {
-        public string input_path = Properties.Settings.Default.input_path; //image input path
-        public static string deepstack_url = Properties.Settings.Default.deepstack_url; //deepstack url
-        public static bool log_everything = Properties.Settings.Default.log_everything; //save every action sent to Log() into the log file?
-        public static bool send_errors = Properties.Settings.Default.send_errors; //send error messages to Telegram?
-        public static string telegram_chatid = Properties.Settings.Default.telegram_chatid; //telegram chat id
-        public static string[] telegram_chatids = telegram_chatid.Replace(" ", "").Split(','); //for multiple Telegram chats that receive alert images
-        public static string telegram_token = Properties.Settings.Default.telegram_token; //telegram bot token
         public int errors = 0; //error counter
         public bool detection_running = false; //is detection running right now or not
         public int file_access_delay = 10; //delay before accessing new file in ms
@@ -51,6 +36,8 @@ namespace WindowsFormsApp2
         static HttpClient client = new HttpClient();
 
         FileSystemWatcher watcher = new FileSystemWatcher(); //fswatcher checking the input folder for new images
+
+        private LegacySettings _settings = new LegacySettings();
 
         public Shell()
         {
@@ -128,7 +115,7 @@ namespace WindowsFormsApp2
             //configure fswatcher to checks input_path for new images, images deleted and renamed images
             try
             {
-                watcher.Path = input_path;
+                watcher.Path = _settings.InputPath;
                 watcher.Filter = "*.jpg";
 
                 //fswatcher events
@@ -141,13 +128,13 @@ namespace WindowsFormsApp2
             }
             catch
             {
-                if (input_path == "")
+                if (_settings.InputPath == "")
                 {
                     Log("ATTENTION: No input folder defined.");
                 }
                 else
                 {
-                    Log($"ERROR: Can't access input folder '{input_path}'.");
+                    Log($"ERROR: Can't access input folder '{_settings.InputPath}'.");
                 }
 
             }
@@ -166,12 +153,12 @@ namespace WindowsFormsApp2
             //SETTINGS TAB
 
             //fill settings tab with stored settings 
-            tbInput.Text = input_path;
-            tbDeepstackUrl.Text = deepstack_url;
-            tb_telegram_chatid.Text = telegram_chatid;
-            tb_telegram_token.Text = telegram_token;
-            cb_log.Checked = log_everything;
-            cb_send_errors.Checked = send_errors;
+            tbInput.Text = _settings.InputPath;
+            tbDeepstackUrl.Text = _settings.DeepstackUrl;
+            tb_telegram_chatid.Text = _settings.TelegramChatId;
+            tb_telegram_token.Text = _settings.TelegramToken;
+            cb_log.Checked = _settings.LogEverything;
+            cb_send_errors.Checked = _settings.SendErrors;
 
             //---------------------------------------------------------------------------
             //STATS TAB
@@ -199,13 +186,13 @@ namespace WindowsFormsApp2
             
             var fullDeepstackUrl = "";
             //allows both "http://ip:port" and "ip:port"
-            if(!deepstack_url.Contains("http://")) //"ip:port"
+            if(!_settings.DeepstackUrl.Contains("http://")) //"ip:port"
             {
-                fullDeepstackUrl = "http://" + deepstack_url + "/v1/vision/detection";
+                fullDeepstackUrl = "http://" + _settings.DeepstackUrl + "/v1/vision/detection";
             }
             else //"http://ip:port"
             {
-                fullDeepstackUrl = deepstack_url + "/v1/vision/detection";
+                fullDeepstackUrl = _settings.DeepstackUrl + "/v1/vision/detection";
             }
             
             var request = new MultipartFormDataContent();
@@ -360,7 +347,7 @@ namespace WindowsFormsApp2
                                             await Trigger(index, image_path); //make TRIGGER
                                             //stats update
                                             CameraList[index].AlertCount++;
-                                            CameraLoader.WriteLegacyFile(CameraList[index]);
+                                            LegacyCameraLoader.WriteFile(CameraList[index]);
                                             Log($"(6/6) SUCCESS.");
 
 
@@ -389,7 +376,7 @@ namespace WindowsFormsApp2
 
                                             //stats update
                                             CameraList[index].IrrelevantAlertCount++;
-                                            CameraLoader.WriteLegacyFile(CameraList[index]);
+                                            LegacyCameraLoader.WriteFile(CameraList[index]);
 
                                             Log($"(6/6) Camera {CameraList[index].Name} caused an irrelevant alert.");
                                             Log("Adding irrelevant detection to history list.");
@@ -435,7 +422,7 @@ namespace WindowsFormsApp2
 
                                         //stats update
                                         CameraList[index].FalseAlertCount++;
-                                        CameraLoader.WriteLegacyFile(CameraList[index]);
+                                        LegacyCameraLoader.WriteFile(CameraList[index]);
                                         
                                         Log($"(6/6) Camera {CameraList[index].Name} caused a false alert, nothing detected.");
 
@@ -499,7 +486,7 @@ namespace WindowsFormsApp2
                     {
                         Log($"ERROR: Processing the following image '{image_path}' failed. {error}");
                         //upload the alert image which could not be analyzed to Telegram
-                        if (send_errors == true)
+                        if (_settings.SendErrors == true)
                         {
                             await TelegramUpload(image_path);
                         }
@@ -556,22 +543,22 @@ namespace WindowsFormsApp2
         //send image to Telegram
         public async Task TelegramUpload(string image_path)
         {
-            if (telegram_chatid != "" && telegram_token != "")
+            if (_settings.TelegramChatId != "" && _settings.TelegramToken != "")
             {
                 //telegram upload sometimes fails
                 try
                 {
                     using (var image_telegram = System.IO.File.OpenRead(image_path))
                     {
-                        var bot = new TelegramBotClient(telegram_token);
+                        var bot = new TelegramBotClient(_settings.TelegramToken);
 
                         //upload image to Telegram servers and send to first chat
-                        Log($"      uploading image to chat \"{telegram_chatids[0]}\"");
-                        var message = await bot.SendPhotoAsync(telegram_chatids[0], new InputOnlineFile(image_telegram, "image.jpg"));
+                        Log($"      uploading image to chat \"{_settings.TelegramChatIds[0]}\"");
+                        var message = await bot.SendPhotoAsync(_settings.TelegramChatIds[0], new InputOnlineFile(image_telegram, "image.jpg"));
                         string file_id = message.Photo[0].FileId; //get file_id of uploaded image
 
                         //share uploaded image with all remaining telegram chats (if multiple chat_ids given) using file_id 
-                        foreach (string chatid in telegram_chatids.Skip(1))
+                        foreach (string chatid in _settings.TelegramChatIds.Skip(1))
                         {
                             Log($"      uploading image to chat \"{chatid}\"");
                             await bot.SendPhotoAsync(chatid, file_id);
@@ -601,13 +588,13 @@ namespace WindowsFormsApp2
         //send text to Telegram
         public async Task TelegramText(string text)
         {
-            if (telegram_chatid != "" && telegram_token != "")
+            if (_settings.TelegramChatId != "" && _settings.TelegramToken != "")
             {
                 //telegram upload sometimes fails
                 try
                 {
-                    var bot = new Telegram.Bot.TelegramBotClient(telegram_token);
-                    foreach (string chatid in telegram_chatids)
+                    var bot = new Telegram.Bot.TelegramBotClient(_settings.TelegramToken);
+                    foreach (string chatid in _settings.TelegramChatIds)
                     {
                         await bot.SendTextMessageAsync(chatid, text);
                     }
@@ -615,11 +602,11 @@ namespace WindowsFormsApp2
                 }
                 catch
                 {
-                    if(send_errors == true && text.Contains("ERROR") || text.Contains("WARNING")) //if Error message originating from Log() methods can't be uploaded
+                    if(_settings.SendErrors == true && text.Contains("ERROR") || text.Contains("WARNING")) //if Error message originating from Log() methods can't be uploaded
                     {
-                        send_errors = false; //shortly disable send_errors to ensure that the Log() does not try to send the 'Telegram upload failed' message via Telegram again (causing a loop)
+                        _settings.SendErrors = false; //shortly disable send_errors to ensure that the Log() does not try to send the 'Telegram upload failed' message via Telegram again (causing a loop)
                         Log($"ERROR: Could not send text \"{text}\" to Telegram.");
-                        send_errors = true;
+                        _settings.SendErrors = true;
 
                         //inform on main tab that Telegram upload failed
                         MethodInvoker LabelUpdate = delegate { lbl_errors.Text = "Can't upload error message to Telegram!"; };
@@ -782,7 +769,7 @@ namespace WindowsFormsApp2
         {
 
             //if log everything is disabled and the text is neighter an ERROR, nor a WARNING: write only to console and ABORT
-            if (log_everything == false && !text.Contains("ERROR") && !text.Contains("WARNING" ) )
+            if (_settings.LogEverything == false && !text.Contains("ERROR") && !text.Contains("WARNING" ) )
             {
                 text += "Enabling \'Log everything\' might give more information.";
                 Console.WriteLine($"{text}");
@@ -794,7 +781,7 @@ namespace WindowsFormsApp2
 
             string time = DateTime.Now.ToString("dd.MM.yyyy, HH:mm:ss");
 
-            if (log_everything == true)
+            if (_settings.LogEverything == true)
             {
                 time = DateTime.Now.ToString("dd.MM.yyyy, HH:mm:ss.fff");
             }
@@ -833,7 +820,7 @@ namespace WindowsFormsApp2
                 Invoke(LabelUpdate);
             }
 
-            if(send_errors == true && text.Contains("ERROR") || text.Contains("WARNING"))
+            if(_settings.SendErrors == true && text.Contains("ERROR") || text.Contains("WARNING"))
             {
                 await TelegramText($"[{time}]: {text}"); //upload text to Telegram
             }
@@ -856,17 +843,17 @@ namespace WindowsFormsApp2
         {
             try
             {
-                watcher.Path = input_path;
+                watcher.Path = _settings.InputPath;
             }
             catch
             {
-                if (input_path == "")
+                if (_settings.InputPath == "")
                 {
                     Log("ATTENTION: No input folder defined.");
                 }
                 else
                 {
-                    Log($"ERROR: Can't access input folder '{input_path}'.");
+                    Log($"ERROR: Can't access input folder '{_settings.InputPath}'.");
                 }
 
             }
@@ -1531,7 +1518,7 @@ namespace WindowsFormsApp2
 
                     foreach (string line in oldLines.Skip(1)) //check for every line except title line if associated image still exists in input folder 
                     {
-                        if(System.IO.File.Exists(input_path + "/" + line.Split('|')[0]) && input_path != "")
+                        if(System.IO.File.Exists(_settings.InputPath + "/" + line.Split('|')[0]) && _settings.InputPath != "")
                         {
                             newLines.Add(line);
                         }
@@ -1648,7 +1635,7 @@ namespace WindowsFormsApp2
             Invoke(LabelUpdate);
 
             
-            await DetectObjects(input_path + "/" + e.Name); //ai process image
+            await DetectObjects(_settings.InputPath + "/" + e.Name); //ai process image
             
             //output Running on Overview Tab
             LabelUpdate = delegate { label2.Text = "Running"; };
@@ -1692,7 +1679,7 @@ namespace WindowsFormsApp2
         {
             if (list1.SelectedItems.Count > 0)
             {
-                using (var img = new Bitmap(input_path + "/" + list1.SelectedItems[0].Text))
+                using (var img = new Bitmap(_settings.InputPath + "/" + list1.SelectedItems[0].Text))
                 {
                     pictureBox1.BackgroundImage = new Bitmap(img); //load actual image as background, so that an overlay can be added as the image
                 }
@@ -1839,7 +1826,7 @@ namespace WindowsFormsApp2
                 }
             }
             Log("read config");
-            Camera cam = CameraLoader.FromLegacyFile(config_path);
+            Camera cam = LegacyCameraLoader.FromFile(config_path);
             Log("add");
             CameraList.Add(cam); //add created camera object to CameraList
 
@@ -1884,7 +1871,7 @@ namespace WindowsFormsApp2
                 ThresholdUpper = threshold_upper
             };
 
-            CameraLoader.WriteLegacyFile(cam);
+            LegacyCameraLoader.WriteFile(cam);
             CameraList.Add(cam); //add created camera object to CameraList
 
             //add camera to list2
@@ -1947,7 +1934,7 @@ namespace WindowsFormsApp2
             // handle name change
             if (cam.Name != name)
             {
-                CameraLoader.DeleteLegacyFile(cam);
+                LegacyCameraLoader.DeleteFile(cam);
                 cam.Name = name;
             }
 
@@ -1961,7 +1948,7 @@ namespace WindowsFormsApp2
             cam.ThresholdLower = threshold_lower;
             cam.ThresholdUpper = threshold_upper;
 
-            CameraLoader.WriteLegacyFile(cam);
+            LegacyCameraLoader.WriteFile(cam);
         
         //3. UPDATE LIST2
             //update list2 entry
@@ -2002,7 +1989,7 @@ namespace WindowsFormsApp2
                     if(index != -1) //only delete camera if index is known (!= its default value -1)
                     {
                         //delete settings file of specified camera
-                        CameraLoader.DeleteLegacyFile(CameraList[index]);
+                        LegacyCameraLoader.DeleteFile(CameraList[index]);
 
                         //move all cameras following the specified camera one position forward in the list
                         //the position of the specified camera is overridden with the following camera, the position of the following camera is overridden with its follower, and so on
@@ -2263,22 +2250,13 @@ namespace WindowsFormsApp2
         private void BtnSettingsSave_Click_1(object sender, EventArgs e)
         {
             //save inputted settings into App.settings
-            Properties.Settings.Default.input_path = tbInput.Text;
-            Properties.Settings.Default.deepstack_url = tbDeepstackUrl.Text;
-            Properties.Settings.Default.telegram_chatid = tb_telegram_chatid.Text;
-            Properties.Settings.Default.telegram_token = tb_telegram_token.Text;
-            Properties.Settings.Default.log_everything = cb_log.Checked;
-            Properties.Settings.Default.send_errors = cb_send_errors.Checked;
-            Properties.Settings.Default.Save();
-
-            //update variables
-            input_path = Properties.Settings.Default.input_path;
-            deepstack_url = Properties.Settings.Default.deepstack_url;
-            telegram_chatid = Properties.Settings.Default.telegram_chatid;
-            telegram_chatids = telegram_chatid.Replace(" ", "").Split(','); //for multiple Telegram chats that receive alert images
-            telegram_token = Properties.Settings.Default.telegram_token;
-            log_everything = Properties.Settings.Default.log_everything;
-            send_errors = Properties.Settings.Default.send_errors;
+            _settings.InputPath = tbInput.Text;
+            _settings.DeepstackUrl = tbDeepstackUrl.Text;
+            _settings.TelegramChatId = tb_telegram_chatid.Text;
+            _settings.TelegramToken = tb_telegram_token.Text;
+            _settings.LogEverything = cb_log.Checked;
+            _settings.SendErrors = cb_send_errors.Checked;
+            _settings.Save();
 
             //update fswatcher to watch new input folder
             UpdateFSWatcher();

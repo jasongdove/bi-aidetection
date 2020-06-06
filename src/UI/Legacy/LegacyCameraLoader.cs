@@ -1,12 +1,13 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using AIDetection.Common;
 
-namespace AIDetection.Common
+namespace WindowsFormsApp2
 {
-    public static class CameraLoader
+    public static class LegacyCameraLoader
     {
-        public static Camera FromLegacyFile(string configPath)
+        public static Camera FromFile(string configPath)
         {
             Camera camera = new Camera();
 
@@ -82,9 +83,9 @@ namespace AIDetection.Common
             return camera;
         }
 
-        public static void WriteLegacyFile(Camera camera)
+        public static void WriteFile(Camera camera)
         {
-            using (StreamWriter sw = File.CreateText(GetLegacyFileName(camera)))
+            using (StreamWriter sw = File.CreateText(GetFileName(camera)))
             {
                 sw.WriteLine($"Trigger URL(s): \"{string.Join(", ", camera.TriggerUrls)}\" (input one or multiple urls, leave empty to disable; format: \"url, url, url\", example: \"http://192.168.1.133:80/admin?trigger&camera=frontyard&user=admin&pw=secretpassword, http://google.com\")");
                 sw.WriteLine($"Relevant objects: \"{string.Join(", ", camera.TriggeringObjects)}\" (format: \"object, object, ...\", options: see below, example: \"person, bicycle, car\")");
@@ -98,12 +99,12 @@ namespace AIDetection.Common
             }
         }
 
-        public static void DeleteLegacyFile(Camera camera)
+        public static void DeleteFile(Camera camera)
         {
-            File.Delete(GetLegacyFileName(camera));
+            File.Delete(GetFileName(camera));
         }
 
-        private static string GetLegacyFileName(Camera camera)
+        private static string GetFileName(Camera camera)
         {
             return AppDomain.CurrentDomain.BaseDirectory + $"/cameras/{ camera.Name }.txt";
         }
