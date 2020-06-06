@@ -35,13 +35,19 @@ namespace WindowsFormsApp2
 
         static HttpClient client = new HttpClient();
 
-        FileSystemWatcher watcher = new FileSystemWatcher(); //fswatcher checking the input folder for new images
-
-        private LegacySettings _settings = new LegacySettings();
+        private LegacySettings _settings;
+        private ImageWatcher _imageWatcher;
 
         public Shell()
         {
             InitializeComponent();
+
+            _settings = new LegacySettings();
+            
+            _imageWatcher = new ImageWatcher(_settings.InputPath);
+            _imageWatcher.OnImageCreatedAsync += OnCreatedAsync;
+            _imageWatcher.OnImageRenamed += OnRenamed;
+            _imageWatcher.OnImageDeleted += OnDeleted;
 
             this.Resize += new System.EventHandler(this.Form1_Resize); //resize event to enable 'minimize to tray'
 
@@ -110,34 +116,6 @@ namespace WindowsFormsApp2
             splitContainer1.Panel2Collapsed = true; //collapse filter panel under left list
             comboBox_filter_camera.Items.Add("All Cameras"); //add "all cameras" entry in filter dropdown combobox
             comboBox_filter_camera.SelectedIndex = comboBox_filter_camera.FindStringExact("All Cameras"); //select all cameras entry
-
-
-            //configure fswatcher to checks input_path for new images, images deleted and renamed images
-            try
-            {
-                watcher.Path = _settings.InputPath;
-                watcher.Filter = "*.jpg";
-
-                //fswatcher events
-                watcher.Created += new FileSystemEventHandler(OnCreatedAsync);
-                watcher.Renamed += new RenamedEventHandler(OnRenamed);
-                watcher.Deleted += new FileSystemEventHandler(OnDeleted);
-
-                //enable fswatcher
-                watcher.EnableRaisingEvents = true;
-            }
-            catch
-            {
-                if (_settings.InputPath == "")
-                {
-                    Log("ATTENTION: No input folder defined.");
-                }
-                else
-                {
-                    Log($"ERROR: Can't access input folder '{_settings.InputPath}'.");
-                }
-
-            }
 
 
             //this method is slow if the database is large, so it's usually only called on startup. During runtime, DeleteListImage() is used to remove obsolete images from the history list
@@ -836,27 +814,6 @@ namespace WindowsFormsApp2
                 IncrementErrorCounter();
             }
 
-        }
-
-        //update input path for fswatcher
-        public void UpdateFSWatcher()
-        {
-            try
-            {
-                watcher.Path = _settings.InputPath;
-            }
-            catch
-            {
-                if (_settings.InputPath == "")
-                {
-                    Log("ATTENTION: No input folder defined.");
-                }
-                else
-                {
-                    Log($"ERROR: Can't access input folder '{_settings.InputPath}'.");
-                }
-
-            }
         }
 
 //----------------------------------------------------------------------------------------------------------
@@ -1623,7 +1580,7 @@ namespace WindowsFormsApp2
         //EVENTS
 
         //EVENT: new image added to input_path -> START AI DETECTION
-        async void OnCreatedAsync(object source, FileSystemEventArgs e)
+        async void OnCreatedAsync(object source, string name)
         {
             System.Threading.Thread.Sleep(file_access_delay); //shorty wait to ensure that the whole image is saved correctly
 
@@ -1635,7 +1592,7 @@ namespace WindowsFormsApp2
             Invoke(LabelUpdate);
 
             
-            await DetectObjects(_settings.InputPath + "/" + e.Name); //ai process image
+            await DetectObjects(_settings.InputPath + "/" + name); //ai process image
             
             //output Running on Overview Tab
             LabelUpdate = delegate { label2.Text = "Running"; };
@@ -1662,16 +1619,15 @@ namespace WindowsFormsApp2
         }
 
         //event: image in input_path renamed
-        void OnRenamed(object source, RenamedEventArgs e)
+        void OnRenamed(object source, string oldName)
         {
-            DeleteListItem(e.OldName);
-            //CreateListItem(e.Name);
+            DeleteListItem(oldName);
         }
 
         //event: image in input path deleted
-        void OnDeleted(object source, FileSystemEventArgs e)
+        void OnDeleted(object source, string name)
         {
-            DeleteListItem(e.Name);
+            DeleteListItem(name);
         }
 
         //event: load selected image to picturebox
@@ -2259,7 +2215,7 @@ namespace WindowsFormsApp2
             _settings.Save();
 
             //update fswatcher to watch new input folder
-            UpdateFSWatcher();
+            _imageWatcher.UpdateInputPath(_settings.InputPath);
 
             //clean history.csv database
             CleanCSVList();
