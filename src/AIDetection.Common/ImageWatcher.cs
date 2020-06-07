@@ -1,18 +1,22 @@
-﻿using System;
+﻿using Microsoft.Extensions.Logging;
+using System;
 using System.IO;
 
 namespace AIDetection.Common
 {
     public class ImageWatcher
     {
+        private readonly ILogger _logger;
         private readonly FileSystemWatcher _fileSystemWatcher;
 
         public event EventHandler<string> OnImageCreatedAsync;
         public event EventHandler<string> OnImageRenamed;
         public event EventHandler<string> OnImageDeleted;
 
-        public ImageWatcher(string inputPath)
+        public ImageWatcher(ILogger logger, string inputPath)
         {
+            _logger = logger;
+
             //fswatcher checking the input folder for new images
             _fileSystemWatcher = new FileSystemWatcher();
 
@@ -35,16 +39,15 @@ namespace AIDetection.Common
             }
             catch
             {
-                // TODO: Fix logging
-
-                //if (inputPath == "")
-                //{
-                //    Log("ATTENTION: No input folder defined.");
-                //}
-                //else
-                //{
-                //    Log($"ERROR: Can't access input folder '{inputPath}'.");
-                //}
+                // TODO: verify/rework this exception handling
+                if (inputPath == "")
+                {
+                    _logger.LogWarning("No input folder defined.");
+                }
+                else
+                {
+                    _logger.LogError("Can't access input folder '{inputPath}'.");
+                }
             }
         }
 
@@ -56,16 +59,15 @@ namespace AIDetection.Common
             }
             catch
             {
-                // TODO: Fix logging
-
-                //if (inputPath == "")
-                //{
-                //    Log("ATTENTION: No input folder defined.");
-                //}
-                //else
-                //{
-                //    Log($"ERROR: Can't access input folder '{inputPath}'.");
-                //}
+                // TODO: verify/rework this exception handling
+                if (inputPath == "")
+                {
+                    _logger.LogWarning("No input folder defined.");
+                }
+                else
+                {
+                    _logger.LogError($"Can't access input folder '{inputPath}'.");
+                }
             }
         }
 

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -9,11 +10,15 @@ namespace AIDetection.Common
 {
     public class TelegramHelper
     {
+        private readonly ILogger _logger;
+
         private string _token;
         private List<string> _chatIds;
 
-        public TelegramHelper(string token, List<string> chatIds)
+        public TelegramHelper(ILogger logger, string token, List<string> chatIds)
         {
+            _logger = logger;
+
             Configure(token, chatIds);
         }
 
@@ -36,31 +41,28 @@ namespace AIDetection.Common
                         var bot = new TelegramBotClient(_token);
 
                         //upload image to Telegram servers and send to first chat
-                        // TODO: fix logging
-                        //Log($"      uploading image to chat \"{_settings.TelegramChatIds[0]}\"");
+                        _logger.LogInformation($"      uploading image to chat \"{_chatIds[0]}\"");
                         var message = await bot.SendPhotoAsync(_chatIds[0], new InputOnlineFile(image_telegram, "image.jpg"));
                         string file_id = message.Photo[0].FileId; //get file_id of uploaded image
 
                         //share uploaded image with all remaining telegram chats (if multiple chat_ids given) using file_id 
                         foreach (string chatid in _chatIds.Skip(1))
                         {
-                            // TODO: fix logging
-                            //Log($"      uploading image to chat \"{chatid}\"");
+                            _logger.LogInformation($"      uploading image to chat \"{chatid}\"");
                             await bot.SendPhotoAsync(chatid, file_id);
                         }
                     }
                 }
                 catch
                 {
-                    // TODO: fix logging
-                    //Log($"ERROR: Could not upload image {image_path} to Telegram.");
+                    _logger.LogError($"Could not upload image {image_path} to Telegram.");
+                    
                     //store image that caused an error in ./errors/
                     if (!Directory.Exists("./errors/")) //if folder does not exist, create the folder
                     {
                         //create folder
                         DirectoryInfo di = Directory.CreateDirectory("./errors");
-                        // TODO: fix logging
-                        //Log("./errors/" + " dir created.");
+                        _logger.LogInformation("./errors/" + " dir created.");
                     }
 
                     //save error image
